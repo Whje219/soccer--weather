@@ -1,0 +1,332 @@
+ <!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#E8F0E9">
+<meta name="description" content="구미 장천 오상고 주변 날씨로 축구 가능 여부를 판정하는 앱">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect fill='%23E8F0E9' width='180' height='180'/><text x='50%' y='50%' font-size='90' text-anchor='middle' dominant-baseline='middle'>⚽</text></svg>">
+<title>축구하러가자 ⚽</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    min-height: 100vh; background: #E8F0E9;
+    font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', system-ui, sans-serif;
+    color: #1B2A41; display: flex; justify-content: center;
+    padding: 20px 12px;
+  }
+  .card {
+    width: 100%; max-width: 420px; background: #fff;
+    border-radius: 20px; border: 1px solid #D6E2D9;
+    overflow: hidden; position: relative; height: fit-content;
+  }
+  .header {
+    padding: 16px 18px 12px; border-bottom: 1px solid #E4EDE6;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .menu-btn {
+    border: 1px solid #1B2A41; background: transparent;
+    border-radius: 10px; width: 38px; height: 38px;
+    cursor: pointer; font-size: 18px; flex-shrink: 0;
+  }
+  .title { font-size: 19px; font-weight: 900; }
+  .subtitle { font-size: 11px; color: #5A6B7B; }
+  .menu {
+    position: absolute; top: 60px; left: 14px; z-index: 10;
+    background: #fff; border: 1px solid #D6E2D9; border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(27,42,65,.15); overflow: hidden;
+    min-width: 130px; display: none;
+  }
+  .menu.open { display: block; }
+  .menu button {
+    display: block; width: 100%; padding: 12px 18px; border: none;
+    text-align: left; font-size: 14px; cursor: pointer;
+    background: #fff; color: #1B2A41; font-weight: 500;
+  }
+  .menu button.active { background: #EAF4EE; font-weight: 800; }
+  .body { padding: 16px 18px 20px; }
+  .section-title {
+    font-size: 12px; font-weight: 800; color: #5A6B7B;
+    letter-spacing: .06em; margin: 14px 0 6px;
+  }
+  .error-banner {
+    background: #FDECEA; color: #A93226; font-size: 12px;
+    padding: 8px 18px; display: none;
+  }
+  .loading { text-align: center; padding: 40px; color: #5A6B7B; }
+  .weather-row { display: flex; justify-content: space-around; }
+  .weather-cell { text-align: center; flex: 1; border-radius: 10px; padding: 8px 2px; }
+  .weather-cell.today { background: #EAF4EE; }
+  .back-btn {
+    border: 1px solid #D6E2D9; background: #F4F8FB; border-radius: 8px;
+    padding: 6px 12px; font-size: 12px; cursor: pointer;
+    margin-bottom: 4px; font-weight: 700;
+  }
+  /* 캘린더 */
+  .cal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .cal-head button {
+    border: none; background: #EDF2F6; border-radius: 8px;
+    width: 30px; height: 30px; cursor: pointer; font-size: 14px; font-weight: 700;
+  }
+  .cal-title { font-weight: 800; font-size: 15px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-dayname { text-align: center; font-size: 11px; font-weight: 700; color: #5A6B7B; padding: 4px 0; }
+  .cal-dayname.sun { color: #C0392B; } .cal-dayname.sat { color: #3B7DBE; }
+  .cal-cell {
+    border: none; background: #F4F8FB; color: #1B2A41; border-radius: 8px;
+    padding: 8px 0; font-size: 13px; cursor: pointer; font-weight: 600;
+  }
+  .cal-cell:disabled { background: transparent; color: #C5D0DA; cursor: default; }
+  .cal-hint { font-size: 11px; color: #5A6B7B; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <button class="menu-btn" onclick="toggleMenu()" aria-label="메뉴">☰</button>
+    <div style="flex:1">
+      <div class="title">축구하러가자 ⚽</div>
+      <div class="subtitle" id="subtitle">구미 장천 · 오상고 인근</div>
+    </div>
+    <button class="menu-btn" id="gpsBtn" onclick="toggleGPS()" aria-label="내 위치" title="내 위치 날씨로 전환">📍</button>
+  </div>
+  <div class="menu" id="menu">
+    <button data-tab="past" onclick="setTab('past')">🕰️ 과거</button>
+    <button data-tab="present" onclick="setTab('present')">📅 현재</button>
+    <button data-tab="future" onclick="setTab('future')">🔮 미래</button>
+  </div>
+  <div class="error-banner" id="errorBanner">
+    날씨 데이터를 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침 해주세요.
+  </div>
+  <div class="body" id="content"></div>
+</div>
+
+<script>
+// ── 기본 관측 지점: 경북 구미시 장천면 오상고등학교 인근 ──
+const OSANG = { lat: 36.16, lon: 128.47, label: "구미 장천 · 오상고 인근" };
+let curLat = OSANG.lat, curLon = OSANG.lon, locLabel = OSANG.label;
+let usingGPS = false;
+const TZ = "Asia/Seoul";
+const DAY_NAMES = ["일","월","화","수","목","금","토"];
+const WEATHER_ICON = {0:"☀️",1:"🌤️",2:"⛅",3:"☁️",45:"🌫",48:"🌫️",51:"🌦️",53:"🌦️",55:"🌧️",61:"🌧️",63:"🌧️",65:"🌧️",71:"🌨️",73:"🌨️",75:"❄️",80:"🌦️",81:"🌧️",82:"⛈️",95:"⛈️",96:"⛈️",99:"⛈️"};
+const WEATHER_DESC = {0:"맑음",1:"대체로 맑음",2:"구름 조금",3:"흐림",45:"안개",48:"짙은 안개",51:"약한 이슬비",53:"이슬비",55:"강한 이슬비",61:"약한 비",63:"비",65:"강한 비",71:"약한 눈",73:"눈",75:"강한 눈",80:"소나기",81:"소나기",82:"강한 소나기",95:"뇌우",96:"뇌우(우박)",99:"강한 뇌우"};
+
+let tab = "present", pastDate = null, calView = new Date();
+
+const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const addDays = (d,n) => { const r = new Date(d); r.setDate(r.getDate()+n); return r; };
+const today = () => { const t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); };
+
+function soccerVerdict(tMean, hum, code) {
+  // 비/눈 오는 날은 우선 제외
+  if ([61,63,65,80,81,82,95,96,99,71,73,75].includes(code)) return {ok:false, msg:"비/눈 ❌"};
+  // 온도 25°C 이상 + 습도 65% 이상 → 축구 안하는게 좋아요
+  if (tMean >= 25 && hum >= 65) return {ok:false, msg:"축구 안하는게 좋아요 🚫"};
+  // 온도 19.5°C 이상 또는 습도 55% 이상 → 축구 하기 힘들어요
+  if (tMean >= 19.5 || hum >= 55) return {ok:false, msg:"축구 하기 힘들어요 😓"};
+  // 온도 19.5°C 미만 + 습도 55% 미만 → 축구해요
+  return {ok:true, msg:"축구해요 ⚽"};
+}
+
+async function fetchDaily(start, end, isArchive) {
+  const base = isArchive
+    ? "https://archive-api.open-meteo.com/v1/archive"
+    : "https://api.open-meteo.com/v1/forecast";
+  const rainVar = isArchive ? "precipitation_sum" : "precipitation_probability_max";
+  const url = `${base}?latitude=${curLat}&longitude=${curLon}`
+    + `&daily=temperature_2m_max,temperature_2m_min,weather_code,${rainVar}`
+    + `&hourly=relative_humidity_2m,temperature_2m`
+    + `&start_date=${fmt(start)}&end_date=${fmt(end)}&timezone=${encodeURIComponent(TZ)}`;
+  const res = await fetch(url);
+  const j = await res.json();
+  if (j.error) throw new Error(j.reason || "API 오류");
+  if (!res.ok) throw new Error("API 오류 (HTTP " + res.status + ")");
+  const d = j.daily;
+  const humByDay = {}, tempByDay = {};
+  j.hourly.time.forEach((t, i) => {
+    const day = t.slice(0, 10);
+    const h = j.hourly.relative_humidity_2m[i];
+    const tp = j.hourly.temperature_2m[i];
+    if (h != null) (humByDay[day] = humByDay[day] || []).push(h);
+    if (tp != null) (tempByDay[day] = tempByDay[day] || []).push(tp);
+  });
+  const avg = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
+  return d.time.map((t,i) => {
+    return {
+      date: new Date(t + "T00:00:00"),
+      tMax: d.temperature_2m_max[i],
+      tMin: d.temperature_2m_min[i],
+      tMean: +avg(tempByDay[t] || []).toFixed(1),
+      hum: Math.round(avg(humByDay[t] || [])),
+      rain: d[rainVar]?.[i] ?? 0,
+      rainUnit: isArchive ? "mm" : "%",
+      code: d.weather_code[i],
+    };
+  });
+}
+
+function barChartSVG(data, getValue, unit, color, fixedMax) {
+  const W = 340, H = 130, PAD_B = 26, PAD_T = 16, n = data.length;
+  const bw = Math.min(28, (W/n)*0.55);
+  const vMax = fixedMax ?? Math.max(...data.map(getValue)) * 1.15;
+  const x = i => (W/n)*i + (W/n)/2;
+  const barH = v => Math.max((v/vMax)*(H-PAD_B-PAD_T), 2);
+  const td = fmt(today());
+  let s = `<svg width="100%" viewBox="0 0 ${W} ${H}">`;
+  data.forEach((d,i) => {
+    const v = getValue(d), h = barH(v);
+    const isToday = fmt(d.date) === td && tab === "present";
+    s += `<rect x="${x(i)-bw/2}" y="${H-PAD_B-h}" width="${bw}" height="${h}" rx="6" fill="${color}" opacity="${isToday?1:0.55}"/>`;
+    s += `<text x="${x(i)}" y="${H-PAD_B-h-5}" text-anchor="middle" font-size="10" font-weight="700" fill="#1B2A41" font-family="ui-monospace,monospace">${v}${unit}</text>`;
+    s += `<text x="${x(i)}" y="${H-12}" text-anchor="middle" font-size="10" fill="${isToday?'#1B2A41':'#5A6B7B'}" font-weight="${isToday?800:400}">${DAY_NAMES[d.date.getDay()]}</text>`;
+    s += `<text x="${x(i)}" y="${H-2}" text-anchor="middle" font-size="8" fill="#9AAAB8">${d.date.getMonth()+1}/${d.date.getDate()}</text>`;
+  });
+  return s + "</svg>";
+}
+
+function weatherRowHTML(data) {
+  const td = fmt(today());
+  return `<div class="weather-row">` + data.map(d => {
+    const v = soccerVerdict(d.tMean, d.hum, d.code);
+    const isToday = fmt(d.date) === td && tab === "present";
+    return `<div class="weather-cell${isToday?' today':''}">
+      <div style="font-size:22px">${WEATHER_ICON[d.code]||"❓"}</div>
+      <div style="font-size:9px;color:#5A6B7B;margin-top:2px">${WEATHER_DESC[d.code]||"—"}</div>
+      <div style="font-size:9px;color:#3B7DBE;margin-top:2px">💧${d.rain}${d.rainUnit||"%"}</div>
+      <div style="font-size:9px;margin-top:4px;font-weight:700;color:${v.ok?'#2E7D4F':'#C0392B'}">${v.msg}</div>
+    </div>`;
+  }).join("") + "</div>";
+}
+
+function calendarHTML() {
+  const y = calView.getFullYear(), m = calView.getMonth();
+  const firstDay = new Date(y,m,1).getDay();
+  const daysInMonth = new Date(y,m+1,0).getDate();
+  let cells = "";
+  for (let i=0; i<firstDay; i++) cells += "<div></div>";
+  for (let d=1; d<=daysInMonth; d++) {
+    const isFuture = new Date(y,m,d) >= today();
+    cells += `<button class="cal-cell" ${isFuture?"disabled":""} onclick="pickDate(${y},${m},${d})">${d}</button>`;
+  }
+  const names = DAY_NAMES.map((n,i) =>
+    `<div class="cal-dayname${i===0?' sun':i===6?' sat':''}">${n}</div>`).join("");
+  return `
+    <div class="cal-head">
+      <button onclick="moveMonth(-1)">‹</button>
+      <div class="cal-title">${y}년 ${m+1}월</div>
+      <button onclick="moveMonth(1)">›</button>
+    </div>
+    <div class="cal-grid">${names}${cells}</div>
+    <div class="cal-hint">날짜를 누르면 그 날을 포함한 일주일의 기록을 보여줘요. (오늘 이후는 선택 불가)</div>`;
+}
+
+function chartsHTML(data) {
+  return `
+    <div class="section-title">🌡️ 최고기온 (°C)</div>
+    ${barChartSVG(data, d=>d.tMax, "°", "#F2A33C")}
+    <div class="section-title">💧 평균 습도 (%)</div>
+    ${barChartSVG(data, d=>d.hum, "", "#2E8B8B", 100)}
+    <div class="section-title">☁️ 날씨 & 축구 판정</div>
+    ${weatherRowHTML(data)}`;
+}
+
+async function render() {
+  const content = document.getElementById("content");
+  const subtitle = document.getElementById("subtitle");
+  const errorBanner = document.getElementById("errorBanner");
+  errorBanner.style.display = "none";
+
+  document.querySelectorAll(".menu button").forEach(b =>
+    b.classList.toggle("active", b.dataset.tab === tab));
+
+  const labels = {past:"과거", present:"현재", future:"미래"};
+  const t = today();
+
+  if (tab === "past" && !pastDate) {
+    subtitle.textContent = `${locLabel} · 과거 — 달력에서 날짜를 골라주세요`;
+    content.innerHTML = calendarHTML();
+    return;
+  }
+
+  let start, end, isArchive = false, desc;
+  if (tab === "present") {
+    start = addDays(t, -t.getDay()); end = addDays(start, 6);
+    desc = "이번 주 (오늘 포함)";
+  } else if (tab === "future") {
+    start = addDays(t, 1); end = addDays(t, 7);
+    desc = "다음 7일 예측";
+  } else {
+    start = addDays(pastDate, -pastDate.getDay()); end = addDays(start, 6);
+    isArchive = true;
+    desc = `${pastDate.getFullYear()}.${pastDate.getMonth()+1}.${pastDate.getDate()} 포함 주간 기록`;
+  }
+  subtitle.textContent = `${locLabel} · ${labels[tab]} — ${desc}`;
+
+  const backBtn = tab === "past"
+    ? `<button class="back-btn" onclick="resetPast()">‹ 다른 날짜 선택</button>` : "";
+  content.innerHTML = backBtn + `<div class="loading">데이터 불러오는 중…</div>`;
+
+  try {
+    const data = await fetchDaily(start, end, isArchive);
+    content.innerHTML = backBtn + chartsHTML(data);
+  } catch (e) {
+    content.innerHTML = backBtn;
+    errorBanner.textContent = "날씨 데이터를 불러오지 못했어요: " + e.message;
+    errorBanner.style.display = "block";
+  }
+}
+
+function toggleMenu() { document.getElementById("menu").classList.toggle("open"); }
+
+function toggleGPS() {
+  const btn = document.getElementById("gpsBtn");
+  if (usingGPS) {
+    // 오상고로 되돌리기
+    usingGPS = false;
+    curLat = OSANG.lat; curLon = OSANG.lon; locLabel = OSANG.label;
+    btn.style.background = "transparent";
+    render();
+    return;
+  }
+  if (!navigator.geolocation) {
+    alert("이 기기에서는 위치 기능을 사용할 수 없어요.");
+    return;
+  }
+  btn.textContent = "⏳";
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      usingGPS = true;
+      curLat = +pos.coords.latitude.toFixed(3);
+      curLon = +pos.coords.longitude.toFixed(3);
+      locLabel = `내 위치 (${curLat}°N ${curLon}°E)`;
+      btn.textContent = "📍";
+      btn.style.background = "#EAF4EE";
+      render();
+    },
+    err => {
+      btn.textContent = "📍";
+      alert("위치를 가져오지 못했어요: " + (err.code === 1 ? "위치 권한을 허용해주세요." : err.message));
+    },
+    { enableHighAccuracy: false, timeout: 10000 }
+  );
+}
+function setTab(t) {
+  tab = t;
+  if (t === "past") pastDate = null;
+  document.getElementById("menu").classList.remove("open");
+  render();
+}
+function pickDate(y,m,d) { pastDate = new Date(y,m,d); render(); }
+function resetPast() { pastDate = null; render(); }
+function moveMonth(n) { calView = new Date(calView.getFullYear(), calView.getMonth()+n, 1); render(); }
+
+// Service Worker 등록
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js").catch(e => console.log("SW 등록 실패:", e));
+}
+
+render();
+</script>
+</body>
+</html>
